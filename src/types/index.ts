@@ -29,7 +29,9 @@ export type Tool =
   | "circle"
   | "freehand"
   | "text"
-  | "sticky-note";
+  | "sticky-note"
+  | "connector"
+  | "eraser";
 
 // Base properties shared by ALL elements
 interface BaseElement {
@@ -77,13 +79,38 @@ export interface StickyNoteElement extends BaseElement {
   height: number;
 }
 
+// Image element — uploaded images on the canvas
+export interface ImageElement extends BaseElement {
+  type: "image";
+  src: string;   // base64 data URL or hosted URL
+  width: number;
+  height: number;
+}
+
+// Connector — arrow between two elements (for flowcharts)
+// WHY store fromId/toId instead of coordinates?
+// When a connected shape moves, the arrow must follow.
+// By referencing shape IDs, we recalculate positions dynamically.
+export interface ConnectorElement extends BaseElement {
+  type: "connector";
+  fromId: string;  // ID of the source element
+  toId: string;    // ID of the target element
+  // Fallback positions if connected element is deleted
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
 // The union — an Element is ONE of these types
 export type BoardElement =
   | RectangleElement
   | CircleElement
   | FreeDrawElement
   | TextElement
-  | StickyNoteElement;
+  | StickyNoteElement
+  | ConnectorElement
+  | ImageElement;
 
 // For undo/redo: we store snapshots of the elements array
 // WHY snapshots over command pattern for now?

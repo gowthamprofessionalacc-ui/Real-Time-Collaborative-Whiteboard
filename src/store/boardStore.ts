@@ -1,69 +1,85 @@
 import { create } from "zustand";
+import { v4 as uuidv4 } from "uuid";
 import { BoardElement, HistoryEntry, Tool } from "@/types";
 
-// =============================================================
-// ZUSTAND STORE — The "brain" of the whiteboard
-// =============================================================
-//
-// HOW IT WORKS:
-// 1. `create()` defines state + actions in one place
-// 2. `set()` updates state immutably (creates new objects, never mutates)
-// 3. Components subscribe to slices: useBoardStore(s => s.elements)
-// 4. Only components using changed data re-render
-//
-// WHY ZUSTAND OVER REDUX?
-// - Redux: create action types, action creators, reducers, middleware,
-//   wrap app in Provider, connect components... lots of boilerplate
-// - Zustand: one file, one `create()` call, done
-// - Performance is equal or better (Zustand uses subscriptions)
-//
-// WHY ZUSTAND OVER REACT CONTEXT?
-// - Context re-renders ALL consumers when ANY value changes
-// - In a whiteboard, cursor moves 60x/sec — Context would re-render
-//   the entire app 60 times per second. Zustand only re-renders
-//   the cursor component.
-
-const MAX_HISTORY = 50; // Limit memory usage
+const MAX_HISTORY = 50;
+const GRID_SIZE = 20;
 
 interface BoardState {
-  // ---- State ----
+  // ---- Core State ----
   elements: BoardElement[];
-  selectedElementId: string | null;
+  selectedElementIds: string[]; // Multi-select support
   tool: Tool;
   fillColor: string;
   strokeColor: string;
   strokeWidth: number;
-
-  // Undo/Redo history
   undoStack: HistoryEntry[];
   redoStack: HistoryEntry[];
-
-  // Drawing state (for shapes being drawn right now)
   isDrawing: boolean;
+
+  // Viewport
+  stageScale: number;
+  stageX: number;
+  stageY: number;
+
+  // Settings
+  gridSnap: boolean;
+  darkMode: boolean;
+
+  // Clipboard for copy/paste
+  clipboard: BoardElement[];
 
   // ---- Actions ----
   setTool: (tool: Tool) => void;
   setFillColor: (color: string) => void;
   setStrokeColor: (color: string) => void;
   setStrokeWidth: (width: number) => void;
-  setSelectedElementId: (id: string | null) => void;
   setIsDrawing: (drawing: boolean) => void;
+  setStageScale: (scale: number) => void;
+  setStagePosition: (x: number, y: number) => void;
+  zoomTo: (scale: number, pointerX: number, pointerY: number) => void;
+  resetView: () => void;
+  toggleGridSnap: () => void;
+  toggleDarkMode: () => void;
+
+  // Selection (multi-select)
+  setSelectedElementId: (id: string | null) => void;
+  setSelectedElementIds: (ids: string[]) => void;
+  addToSelection: (id: string) => void;
+  removeFromSelection: (id: string) => void;
 
   // Element CRUD
   addElement: (element: BoardElement) => void;
   updateElement: (id: string, updates: Partial<BoardElement>) => void;
   deleteElement: (id: string) => void;
+  deleteSelectedElements: () => void;
+
+  // Layer ordering
+  bringToFront: (id: string) => void;
+  sendToBack: (id: string) => void;
+  bringForward: (id: string) => void;
+  sendBackward: (id: string) => void;
+
+  // Copy/Paste
+  copySelected: () => void;
+  paste: (offsetX?: number, offsetY?: number) => void;
+  duplicateSelected: () => void;
+
+  // Grid snap helper
+  snapToGrid: (value: number) => number;
 
   // History
   saveToHistory: () => void;
   undo: () => void;
   redo: () => void;
+
+  // Backward compat
+  selectedElementId: string | null;
 }
 
 export const useBoardStore = create<BoardState>((set, get) => ({
-  // ---- Initial State ----
   elements: [],
-  selectedElementId: null,
+  selectedElementIds: [],
   tool: "select",
   fillColor: "#4A90D9",
   strokeColor: "#000000",
@@ -71,27 +87,64 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   isDrawing: false,
+  stageScale: 1,
+  stageX: 0,
+  stageY: 0,
+  gridSnap: false,
+  darkMode: false,
+  clipboard: [],
 
-  // ---- Simple Setters ----
-  setTool: (tool) => set({ tool, selectedElementId: null }),
+  // Backward compat — returns first selected ID or null
+  get selectedElementId() {
+    const state = get();
+    return state.selectedElementIds.length > 0 ? state.selectedElementIds[0] : null;
+  },
+
+  // ---- Setters ----
+  setTool: (tool) => set({ tool, selectedElementIds: [] }),
   setFillColor: (fillColor) => set({ fillColor }),
   setStrokeColor: (strokeColor) => set({ strokeColor }),
   setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
-  setSelectedElementId: (selectedElementId) => set({ selectedElementId }),
   setIsDrawing: (isDrawing) => set({ isDrawing }),
+  setStageScale: (stageScale) => set({ stageScale }),
+  setStagePosition: (stageX, stageY) => set({ stageX, stageY }),
+  toggleGridSnap: () => set((s) => ({ gridSnap: !s.gridSnap })),
+  toggleDarkMode: () => set((s) => ({ darkMode: !s.darkMode })),
 
-  // ---- Element Operations ----
+  zoomTo: (newScale, pointerX, pointerY) =>
+    set((state) => {
+      const clampedScale = Math.min(Math.max(newScale, 0.1), 5);
+      const mousePointTo = {
+        x: (pointerX - state.stageX) / state.stageScale,
+        y: (pointerY - state.stageY) / state.stageScale,
+      };
+      return {
+        stageScale: clampedScale,
+        stageX: pointerX - mousePointTo.x * clampedScale,
+        stageY: pointerY - mousePointTo.y * clampedScale,
+      };
+    }),
 
-  addElement: (element) =>
-    set((state) => ({
-      elements: [...state.elements, element],
-      // Clear redo when new action happens (standard behavior)
-      redoStack: [],
+  resetView: () => set({ stageScale: 1, stageX: 0, stageY: 0 }),
+
+  // ---- Selection ----
+  setSelectedElementId: (id) => set({ selectedElementIds: id ? [id] : [] }),
+  setSelectedElementIds: (selectedElementIds) => set({ selectedElementIds }),
+  addToSelection: (id) =>
+    set((s) =>
+      s.selectedElementIds.includes(id)
+        ? s
+        : { selectedElementIds: [...s.selectedElementIds, id] }
+    ),
+  removeFromSelection: (id) =>
+    set((s) => ({
+      selectedElementIds: s.selectedElementIds.filter((i) => i !== id),
     })),
 
-  // WHY Partial<BoardElement>?
-  // When dragging a shape, we only want to update x and y,
-  // not pass the entire object. Partial<T> makes all fields optional.
+  // ---- Element CRUD ----
+  addElement: (element) =>
+    set((state) => ({ elements: [...state.elements, element], redoStack: [] })),
+
   updateElement: (id, updates) =>
     set((state) => ({
       elements: state.elements.map((el) =>
@@ -101,46 +154,101 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   deleteElement: (id) =>
     set((state) => {
-      // Save current state before deleting
       get().saveToHistory();
       return {
         elements: state.elements.filter((el) => el.id !== id),
-        selectedElementId:
-          state.selectedElementId === id ? null : state.selectedElementId,
+        selectedElementIds: state.selectedElementIds.filter((i) => i !== id),
         redoStack: [],
       };
     }),
 
-  // ---- History (Undo/Redo) ----
-  //
-  // HOW THIS WORKS:
-  //   Action flow:  saveToHistory() → make change → (user can undo later)
-  //
-  //   undoStack: [ [state1], [state2], [state3] ]  ← push before each change
-  //   current:   [state4]
-  //   redoStack: []
-  //
-  //   User presses Ctrl+Z:
-  //   undoStack: [ [state1], [state2] ]
-  //   current:   [state3]  ← restored from undoStack
-  //   redoStack: [ [state4] ]  ← moved current here
-  //
-  // WHY SNAPSHOT APPROACH?
-  // - Simple: just copy the array
-  // - Works for all operations (add, move, delete, edit)
-  // - Downside: memory usage grows with history size (hence MAX_HISTORY cap)
-  //
-  // ALTERNATIVE — Command Pattern:
-  // - Store {execute(), undo()} objects instead of full state copies
-  // - Pro: uses less memory
-  // - Con: every operation needs custom undo logic (error-prone)
-  // - Best when: you have collaborative editing and need to replay operations
+  deleteSelectedElements: () =>
+    set((state) => {
+      if (state.selectedElementIds.length === 0) return state;
+      get().saveToHistory();
+      const ids = new Set(state.selectedElementIds);
+      return {
+        elements: state.elements.filter((el) => !ids.has(el.id)),
+        selectedElementIds: [],
+        redoStack: [],
+      };
+    }),
 
+  // ---- Layer Ordering ----
+  // Elements render in array order: index 0 = bottom, last = top
+  bringToFront: (id) =>
+    set((state) => {
+      const el = state.elements.find((e) => e.id === id);
+      if (!el) return state;
+      return { elements: [...state.elements.filter((e) => e.id !== id), el] };
+    }),
+
+  sendToBack: (id) =>
+    set((state) => {
+      const el = state.elements.find((e) => e.id === id);
+      if (!el) return state;
+      return { elements: [el, ...state.elements.filter((e) => e.id !== id)] };
+    }),
+
+  bringForward: (id) =>
+    set((state) => {
+      const idx = state.elements.findIndex((e) => e.id === id);
+      if (idx === -1 || idx === state.elements.length - 1) return state;
+      const next = [...state.elements];
+      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+      return { elements: next };
+    }),
+
+  sendBackward: (id) =>
+    set((state) => {
+      const idx = state.elements.findIndex((e) => e.id === id);
+      if (idx <= 0) return state;
+      const next = [...state.elements];
+      [next[idx], next[idx - 1]] = [next[idx - 1], next[idx]];
+      return { elements: next };
+    }),
+
+  // ---- Copy / Paste / Duplicate ----
+  copySelected: () =>
+    set((state) => ({
+      clipboard: structuredClone(
+        state.elements.filter((el) => state.selectedElementIds.includes(el.id))
+      ),
+    })),
+
+  paste: (offsetX = 20, offsetY = 20) =>
+    set((state) => {
+      if (state.clipboard.length === 0) return state;
+      get().saveToHistory();
+      const newElements = state.clipboard.map((el) => ({
+        ...el,
+        id: uuidv4(),
+        x: el.x + offsetX,
+        y: el.y + offsetY,
+      })) as BoardElement[];
+      return {
+        elements: [...state.elements, ...newElements],
+        selectedElementIds: newElements.map((e) => e.id),
+        redoStack: [],
+      };
+    }),
+
+  duplicateSelected: () => {
+    get().copySelected();
+    get().paste(30, 30);
+  },
+
+  // ---- Grid Snap ----
+  snapToGrid: (value) => {
+    if (!get().gridSnap) return value;
+    return Math.round(value / GRID_SIZE) * GRID_SIZE;
+  },
+
+  // ---- History ----
   saveToHistory: () =>
     set((state) => ({
       undoStack: [
         ...state.undoStack.slice(-MAX_HISTORY),
-        // structuredClone creates a deep copy — prevents reference issues
         structuredClone(state.elements),
       ],
       redoStack: [],
@@ -149,26 +257,24 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   undo: () =>
     set((state) => {
       if (state.undoStack.length === 0) return state;
-
       const previousState = state.undoStack[state.undoStack.length - 1];
       return {
         undoStack: state.undoStack.slice(0, -1),
         redoStack: [...state.redoStack, structuredClone(state.elements)],
         elements: previousState,
-        selectedElementId: null,
+        selectedElementIds: [],
       };
     }),
 
   redo: () =>
     set((state) => {
       if (state.redoStack.length === 0) return state;
-
       const nextState = state.redoStack[state.redoStack.length - 1];
       return {
         redoStack: state.redoStack.slice(0, -1),
         undoStack: [...state.undoStack, structuredClone(state.elements)],
         elements: nextState,
-        selectedElementId: null,
+        selectedElementIds: [],
       };
     }),
 }));

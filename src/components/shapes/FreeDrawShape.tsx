@@ -30,13 +30,13 @@ interface Props {
 }
 
 export default function FreeDrawShape({ element }: Props) {
-  const selectedId = useBoardStore((s) => s.selectedElementId);
+  const selectedIds = useBoardStore((s) => s.selectedElementIds);
   const setSelectedId = useBoardStore((s) => s.setSelectedElementId);
   const tool = useBoardStore((s) => s.tool);
   const saveToHistory = useBoardStore((s) => s.saveToHistory);
   const updateElement = useBoardStore((s) => s.updateElement);
 
-  const isSelected = selectedId === element.id;
+  const isSelected = selectedIds.includes(element.id);
 
   return (
     <Line

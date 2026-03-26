@@ -27,13 +27,13 @@ interface Props {
 }
 
 export default function TextShape({ element }: Props) {
-  const selectedId = useBoardStore((s) => s.selectedElementId);
+  const selectedIds = useBoardStore((s) => s.selectedElementIds);
   const setSelectedId = useBoardStore((s) => s.setSelectedElementId);
   const updateElement = useBoardStore((s) => s.updateElement);
   const saveToHistory = useBoardStore((s) => s.saveToHistory);
   const tool = useBoardStore((s) => s.tool);
 
-  const isSelected = selectedId === element.id;
+  const isSelected = selectedIds.includes(element.id);
 
   return (
     <Text
