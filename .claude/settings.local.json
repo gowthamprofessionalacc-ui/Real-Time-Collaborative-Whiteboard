@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --turbopack)",
+      "Bash(npx create-next-app@latest figma-drawer --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --turbopack)",
+      "Bash(npx --yes create-next-app@latest figma-drawer --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --turbopack --no-react-compiler)",
+      "Bash(yes \"\")",
+      "Bash(npx --yes create-next-app@latest figma-drawer --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --turbopack)",
+      "Bash(rm package.json)",
+      "Bash(cp -r figma-drawer/* .)",
+      "Bash(cp -r figma-drawer/.* .)",
+      "Bash(rm -rf figma-drawer)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx next:*)",
+      "Bash(npx kill-port:*)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(start http://localhost:3000)",
+      "Bash(curl -s -o /dev/null -w \"Board page: %{http_code}\\\\n\" http://localhost:3000/board/test123)",
+      "Bash(curl -s \"http://localhost:3000/socket.io/?EIO=4&transport=polling\")",
+      "Read(//c/Users/ASUS/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/b75264d0-b823-4420-8e11-295169de527f/97f2ed5f-f7b8-438b-a50b-49433d17d111/skills/docx/**)",
+      "Bash(npm list:*)",
+      "Bash(node generate-doc.js)",
+      "Bash(node generate-doc-update.js)",
+      "Bash(rm generate-doc-update.js)",
+      "Bash(sed -i 's/Whiteboard_Project_Documentation.docx/Whiteboard_Complete_Guide.docx/' generate-doc-update.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/auth/login)"
+    ]
+  }
+}
